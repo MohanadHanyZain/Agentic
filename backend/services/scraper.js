@@ -10,28 +10,30 @@ const client = new ApifyClient({
     token: process.env.APIFY_API_KEY,
 });
 
-const ACTOR_ID = process.env.APIFY_ACTOR_ID || 'devcake/upwork-jobs-scraper';
+const ACTOR_ID = process.env.APIFY_ACTOR_ID || 'blackfalcondata/upwork-scraper';
 
-// ✅ خرائط التحويل
+// ✅ خريطة تحويل قيم الـ Experience Level للـ Actor الجديد
 const EXPERIENCE_LEVEL_MAP = {
-    'entry': 'EntryLevel',
-    'intermediate': 'IntermediateLevel',
-    'expert': 'ExpertLevel'
+    'entry': 'Entry',
+    'intermediate': 'Intermediate',
+    'expert': 'Expert'
 };
 
+// ✅ خريطة تحويل قيم الـ Workload
 const WORKLOAD_MAP = {
-    'less_than_10': 'part_time',
-    '10_30': 'full_time',
-    'more_than_30': 'full_time',
-    'part_time': 'part_time',
-    'full_time': 'full_time',
-    'as_needed': 'as_needed'
+    'less_than_10': 'LessThan10',
+    '10_30': '10To30',
+    'more_than_30': 'MoreThan30',
+    'part_time': 'PartTime',
+    'full_time': 'FullTime',
+    'as_needed': 'AsNeeded'
 };
 
+// ✅ خريطة تحويل Project Duration
 const DURATION_MAP = {
-    'less_than_1_week': 'less_than_1_week',
-    '1_4_weeks': '1_4_weeks',
-    'more_than_1_month': 'more_than_1_month'
+    'less_than_1_week': 'LessThan1Week',
+    '1_4_weeks': '1To4Weeks',
+    'more_than_1_month': 'MoreThan1Month'
 };
 
 const mapExperienceLevel = (value) => {
@@ -50,12 +52,12 @@ const mapDuration = (value) => {
 };
 
 /**
- * تنظيف الـ input قبل إرساله لـ Apify
+ * ✅ تنظيف الـ input للـ Actor الجديد blackfalcondata/upwork-scraper
  */
 const cleanActorInput = (filters) => {
     const clean = {};
     
-    // 1. Search Queries - Array
+    // 1. Search Queries - ✅ Array مطلوب
     if (filters.search_queries) {
         clean.searchQueries = filters.search_queries
             .split(',')
@@ -65,58 +67,69 @@ const cleanActorInput = (filters) => {
         clean.searchQueries = ['developer'];
     }
     
-    // 2. Sort By
-    clean.sortBy = filters.sort_by || 'most_recent';
+    // 2. ✅ الحد الأقصى للنتائج
+    clean.maxResults = parseInt(filters.maxResults) || 20;
     
-    // 3. Job Type - Array
-    if (filters.job_type && filters.job_type.length > 0) {
-        clean.jobType = [filters.job_type.toLowerCase()];
-    }
+    // 3. ✅ تفعيل Incremental Mode - بيجيب بس الجديد
+    clean.incrementalMode = true;
     
-    // 4. Experience Level - Array
+    // 4. ✅ استبعاد الوظائف المنتهية
+    clean.excludeExpired = true;
+    
+    // 5. ✅ Flatten Results - عشان النتائج تكون واضحة
+    clean.flattenResults = true;
+    
+    // 6. ✅ Experience Level - مصفوفة
     if (filters.experience_level && filters.experience_level.length > 0) {
         const mapped = mapExperienceLevel(filters.experience_level);
         if (mapped) {
-            clean.experienceLevel = [mapped];
+            clean.experienceLevels = [mapped];
         }
     }
     
-    // 5. Workload - Array مع mapping
+    // 7. ✅ Job Type - مصفوفة
+    if (filters.job_type && filters.job_type.length > 0) {
+        clean.jobTypes = [filters.job_type.toLowerCase()];
+    }
+    
+    // 8. ✅ Workload - مصفوفة
     if (filters.workload && filters.workload.length > 0) {
         const mapped = mapWorkload(filters.workload);
         if (mapped) {
-            clean.workload = [mapped];
+            clean.workloads = [mapped];
         }
     }
     
-    // 6. Project Duration - Array
+    // 9. ✅ Project Duration - مصفوفة
     if (filters.project_duration && filters.project_duration.length > 0) {
         const mapped = mapDuration(filters.project_duration);
         if (mapped) {
-            clean.projectDuration = [mapped];
+            clean.projectDurations = [mapped];
         }
     }
     
-    // 7. Budget - Numbers
+    // 10. ✅ Budget Range
     if (filters.budget_min && filters.budget_min.length > 0) {
-        clean.budgetMin = parseFloat(filters.budget_min);
+        clean.minBudget = parseFloat(filters.budget_min);
     }
     if (filters.budget_max && filters.budget_max.length > 0) {
-        clean.budgetMax = parseFloat(filters.budget_max);
+        clean.maxBudget = parseFloat(filters.budget_max);
     }
     
-    // 8. Client History
+    // 11. ✅ Client Hiring History
     if (filters.client_history && filters.client_history.length > 0) {
         clean.clientHistory = filters.client_history;
     }
     
-    // 9. إعدادات إضافية
-    clean.maxResults = 20;
-    clean.scrapeAllPages = false;
+    // 12. ✅ استخدام بروكسي لتجنب الحظر
+    clean.useApifyProxy = true;
+    clean.apifyProxyGroups = ['RESIDENTIAL'];
+    clean.apifyProxyCountries = ['US'];
     
-    // تنظيف undefined
+    // تنظيف أي قيم undefined
     Object.keys(clean).forEach(key => {
-        if (clean[key] === undefined || clean[key] === null) {
+        if (clean[key] === undefined || clean[key] === null || 
+            (Array.isArray(clean[key]) && clean[key].length === 0)) {
             delete clean[key];
         }
     });
@@ -125,11 +138,11 @@ const cleanActorInput = (filters) => {
 };
 
 /**
- * 🆕 حفظ الوظائف باستخدام UPSERT (بدون حذف)
+ * ✅ حفظ الوظائف باستخدام UPSERT
  */
 const saveJobsToDatabase = async (userId, jobs, filters) => {
     try {
-        // 1. جلب filter_id
+        // جلب filter_id
         const { data: filterData } = await supabase
             .from('user_filters')
             .select('id')
@@ -138,55 +151,68 @@ const saveJobsToDatabase = async (userId, jobs, filters) => {
         
         const filterId = filterData?.id || null;
         
-        // 2. تحضير البيانات مع job_url الفريد
-        const jobsToUpsert = jobs.map(job => {
-            // استخراج URL فريد
-            const jobUrl = job.url || job.link || job.jobUrl || '';
-            
-            // استخراج job_id من الرابط (آخر جزء)
-            const jobId = jobUrl.split('/').pop() || null;
-            
-            return {
-                user_id: userId,
-                filter_id: filterId,
-                job_url: jobUrl, // ✅ المفتاح الفريد
-                job_id: jobId,
-                job_data: {
-                    title: job.title || job.name || 'Untitled',
-                    description: job.description || job.content || '',
-                    url: jobUrl,
-                    budget: job.budget || job.price || 'N/A',
-                    experienceLevel: job.experienceLevel || job.experience || 'Any',
-                    jobType: job.jobType || job.type || 'N/A',
-                    clientHistory: job.clientHistory || job.client_history || '',
-                    postedAt: job.postedAt || job.createdAt || new Date().toISOString()
-                },
-                last_seen: new Date().toISOString(), // ✅ تحديث وقت المشاهدة
-                is_active: true,
-                status: 'active',
-                scraped_at: new Date().toISOString()
-            };
-        });
-
-        // 3. استخدام UPSERT مع onConflict
         let addedCount = 0;
         let existingCount = 0;
         const errors = [];
 
-        for (const job of jobsToUpsert) {
-            // نتخطى الوظائف التي ليس لها URL
-            if (!job.job_url || job.job_url === '#') {
-                console.warn('⚠️ Skipping job without URL:', job.job_data.title);
+        for (const job of jobs) {
+            // ✅ استخراج الرابط الصحيح
+            let jobUrl = job.url || job.link || job.jobUrl || job.job_url || '';
+            
+            // ✅ بناء الرابط الكامل
+            if (jobUrl && !jobUrl.startsWith('http')) {
+                if (jobUrl.startsWith('/')) {
+                    jobUrl = `https://www.upwork.com${jobUrl}`;
+                } else if (jobUrl.startsWith('~')) {
+                    jobUrl = `https://www.upwork.com/jobs/${jobUrl}`;
+                } else {
+                    jobUrl = `https://www.upwork.com/jobs/${jobUrl}`;
+                }
+            }
+            
+            if (!jobUrl || jobUrl === '#') {
+                console.warn('⚠️ Skipping job without valid URL:', job.title);
                 continue;
             }
+            
+            // استخراج job_id
+            const jobId = jobUrl.split('/').pop() || null;
+            
+            // ✅ تحضير البيانات
+            const jobData = {
+                user_id: userId,
+                filter_id: filterId,
+                job_url: jobUrl,
+                job_id: jobId,
+                job_data: {
+                    title: job.title || job.name || 'Untitled',
+                    description: job.description || job.content || job.snippet || '',
+                    url: jobUrl,
+                    budget: job.budget || job.price || job.hourlyRate || 'N/A',
+                    experienceLevel: job.experienceLevel || job.experience || 'Any',
+                    jobType: job.jobType || job.type || job.job_type || 'N/A',
+                    clientHistory: job.clientHistory || job.client_history || '',
+                    postedAt: job.postedAt || job.createdAt || job.postedDate || new Date().toISOString(),
+                    // بيانات إضافية من الـ Actor الجديد
+                    clientRating: job.clientRating || null,
+                    totalSpent: job.totalSpent || null,
+                    totalHires: job.totalHires || null,
+                    country: job.country || null
+                },
+                last_seen: new Date().toISOString(),
+                is_active: true,
+                status: 'active',
+                scraped_at: new Date().toISOString()
+            };
 
+            // ✅ UPSERT
             const { data, error } = await supabase
                 .from('jobs')
                 .upsert(
-                    job,
+                    jobData,
                     { 
-                        onConflict: 'job_url', // المفتاح الفريد
-                        ignoreDuplicates: false // ✅ نحدث last_seen لو موجود
+                        onConflict: 'job_url',
+                        ignoreDuplicates: false
                     }
                 )
                 .select();
@@ -195,10 +221,8 @@ const saveJobsToDatabase = async (userId, jobs, filters) => {
                 errors.push(error.message);
                 console.error('❌ Error upserting job:', error.message);
             } else if (data && data.length > 0) {
-                // لو رجع data يبقى تمت الإضافة
                 addedCount++;
             } else {
-                // لو مفيش data يبقى موجود بالفعل
                 existingCount++;
             }
         }
@@ -218,11 +242,10 @@ const saveJobsToDatabase = async (userId, jobs, filters) => {
 };
 
 /**
- * 🆕 كشف الوظائف المنتهية
+ * ✅ كشف الوظائف المنتهية
  */
 const detectExpiredJobs = async (userId, currentJobUrls) => {
     try {
-        // 1. جلب جميع الوظائف النشطة للمستخدم
         const { data: activeJobs, error } = await supabase
             .from('jobs')
             .select('job_url, id')
@@ -235,14 +258,10 @@ const detectExpiredJobs = async (userId, currentJobUrls) => {
             return { expiredCount: 0, expiredUrls: [] };
         }
 
-        // 2. استخراج الـ URLs النشطة
         const activeUrls = activeJobs.map(j => j.job_url).filter(url => url && url !== '#');
-
-        // 3. مقارنة مع الوظائف الحالية
         const currentUrls = currentJobUrls.filter(url => url && url !== '#');
         const expiredUrls = activeUrls.filter(url => !currentUrls.includes(url));
 
-        // 4. تحديث حالة الوظائف المنتهية
         if (expiredUrls.length > 0) {
             const { error: updateError } = await supabase
                 .from('jobs')
@@ -271,7 +290,7 @@ const detectExpiredJobs = async (userId, currentJobUrls) => {
 };
 
 /**
- * تشغيل Actor لجلب الوظائف
+ * ✅ تشغيل Actor لجلب الوظائف
  */
 export const runScraperForUser = async (userId, filters) => {
     const startTime = new Date();
@@ -306,14 +325,20 @@ export const runScraperForUser = async (userId, filters) => {
         
         jobsFound = items?.length || 0;
         console.log(`📊 Found ${jobsFound} jobs for user ${userId}`);
-        
-        // ✅ حفظ باستخدام UPSERT
-        if (items && items.length > 0) {
-            const saveResult = await saveJobsToDatabase(userId, items, filters);
+
+        // ✅ فلترة الوظائف الصالحة فقط
+        const validJobs = items?.filter(job => {
+            const url = job.url || job.link || job.jobUrl || '';
+            return url && url !== '#' && job.title;
+        }) || [];
+
+        console.log(`✅ ${validJobs.length} valid jobs out of ${jobsFound}`);
+
+        if (validJobs.length > 0) {
+            const saveResult = await saveJobsToDatabase(userId, validJobs, filters);
             addedCount = saveResult.addedCount || 0;
             
-            // ✅ كشف الوظائف المنتهية
-            const currentUrls = items.map(job => job.url || job.link || job.jobUrl || '').filter(url => url && url !== '#');
+            const currentUrls = validJobs.map(job => job.url || job.link || job.jobUrl || '').filter(url => url && url !== '#');
             const expiredResult = await detectExpiredJobs(userId, currentUrls);
             expiredCount = expiredResult.expiredCount || 0;
         }
@@ -323,6 +348,7 @@ export const runScraperForUser = async (userId, filters) => {
         return {
             success: true,
             jobCount: jobsFound,
+            validCount: validJobs.length,
             addedCount: addedCount,
             expiredCount: expiredCount,
             runId: run.id
@@ -340,7 +366,7 @@ export const runScraperForUser = async (userId, filters) => {
             expiredCount: 0
         };
     } finally {
-        // ✅ تسجيل العملية في scrape_logs
+        // تسجيل العملية
         await logScrape(userId, status, {
             jobs_found: jobsFound,
             jobs_added: addedCount,
@@ -351,7 +377,7 @@ export const runScraperForUser = async (userId, filters) => {
 };
 
 /**
- * تشغيل السكرابر لكل المستخدمين
+ * ✅ تشغيل السكرابر لكل المستخدمين
  */
 export const runScraperForAllUsers = async () => {
     try {

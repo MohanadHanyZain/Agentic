@@ -2,20 +2,37 @@
 import React from 'react';
 
 const JobCard = ({ job }) => {
-  // استخراج البيانات مع fallbacks
-  const title = job?.title || job?.name || 'Untitled Job';
-  const description = job?.description || job?.content || '';
-  const url = job?.url || job?.link || '#';
-  const budget = job?.budget || job?.price || 'N/A';
-  const experienceLevel = job?.experienceLevel || job?.experience || 'Any';
-  const jobType = job?.jobType || job?.type || 'N/A';
-  const clientHistory = job?.clientHistory || job?.client_history || '';
-  const postedAt = job?.postedAt || job?.createdAt || '';
+  // استخراج البيانات
+  const jobData = job?.job_data || job || {};
+  
+  const title = jobData?.title || job?.title || 'Untitled Job';
+  const description = jobData?.description || job?.description || '';
+  let url = jobData?.url || job?.url || job?.link || job?.jobUrl || '#';
+  
+  // ✅ تأكد من صحة الرابط
+  if (url && url !== '#' && !url.startsWith('http')) {
+    if (url.startsWith('/')) {
+      url = `https://www.upwork.com${url}`;
+    } else if (url.startsWith('~')) {
+      url = `https://www.upwork.com/jobs/${url}`;
+    } else {
+      url = `https://www.upwork.com/jobs/${url}`;
+    }
+  }
+  
+  const isValidUrl = url && url !== '#' && url.startsWith('http');
+  const budget = jobData?.budget || job?.budget || 'N/A';
+  const experienceLevel = jobData?.experienceLevel || job?.experienceLevel || 'Any';
+  const jobType = jobData?.jobType || job?.jobType || 'N/A';
+  const postedAt = jobData?.postedAt || job?.postedAt || job?.postedDate || '';
+  
+  // بيانات إضافية من الـ Actor الجديد
+  const clientRating = jobData?.clientRating || job?.clientRating || null;
+  const country = jobData?.country || job?.country || '';
 
-  // تقصير الوصف
-  const shortDescription = description.length > 150 
+  const shortDescription = description?.length > 150 
     ? description.substring(0, 150) + '...' 
-    : description;
+    : description || '';
 
   return (
     <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 bg-white">
@@ -39,9 +56,14 @@ const JobCard = ({ job }) => {
             🏷️ {jobType}
           </span>
         )}
-        {clientHistory && (
+        {clientRating && (
           <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-            👤 {clientHistory}
+            ⭐ {clientRating}/5
+          </span>
+        )}
+        {country && (
+          <span className="text-sm bg-gray-100 text-gray-700 px-2 py-1 rounded">
+            🌍 {country}
           </span>
         )}
       </div>
@@ -58,22 +80,21 @@ const JobCard = ({ job }) => {
         </p>
       )}
 
-      <a 
-        href={url} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="text-blue-500 text-sm mt-3 inline-block hover:text-blue-700 hover:underline"
-      >
-        View on Upwork →
-      </a>
-      {job.is_active === false && (
-  <span className="text-sm bg-red-100 text-red-700 px-2 py-1 rounded">
-    ⛔ Expired
-  </span>
-)}
+      {isValidUrl ? (
+        <a 
+          href={url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-blue-500 text-sm mt-3 inline-block hover:text-blue-700 hover:underline"
+        >
+          View on Upwork →
+        </a>
+      ) : (
+        <span className="text-gray-400 text-sm mt-3 inline-block">
+          ⛔ Job no longer available
+        </span>
+      )}
     </div>
-
-
   );
 };
 
